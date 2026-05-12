@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Page config ──────────────────────────────────────────────
 st.set_page_config(page_title="智能问答助手", page_icon="🤖", layout="wide")
 st.title("🤖 智能问答助手")
 
@@ -17,49 +16,33 @@ with st.sidebar:
         "API Key",
         type="password",
         value=os.getenv("ANTHROPIC_API_KEY", ""),
-        help="输入你的 Anthropic API Key，或通过环境变量 ANTHROPIC_API_KEY 设置",
+        help="输入你的 Anthropic API Key",
     )
 
     model = st.selectbox(
         "模型",
-        options=["claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-7"],
+        options=["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-7"],
         index=0,
-        help="选择 Claude 模型",
+        help="选择 Claude 模型。Haiku 最快最便宜，Opus 最强。",
     )
 
-    temperature = st.slider(
-        "Temperature",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.7,
-        step=0.1,
-        help="控制回答的随机性，越高越有创意",
-    )
-
-    max_tokens = st.slider(
-        "最大输出长度",
-        min_value=256,
-        max_value=8192,
-        value=4096,
-        step=256,
-        help="限制单次回答的最大 token 数",
-    )
+    temperature = st.slider("Temperature", 0.0, 1.0, 0.7, 0.1)
+    max_tokens = st.slider("最大输出长度", 256, 8192, 4096, 256)
 
     system_prompt = st.text_area(
         "系统提示词",
         value="你是一个乐于助人的智能助手，请用简洁清晰的中文回答用户的问题。",
-        help="设定 AI 助手的行为风格",
     )
 
     if st.button("🗑️ 清空对话", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
 
-# ── Initialize session state ─────────────────────────────────
+# ── Init session ─────────────────────────────────────────────
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# ── Display chat history ─────────────────────────────────────
+# ── Display history ──────────────────────────────────────────
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
@@ -76,12 +59,12 @@ if prompt := st.chat_input("输入你的问题..."):
 
     with st.chat_message("assistant"):
         placeholder = st.empty()
-        full_response = ""
+        placeholder.markdown("思考中...")
 
         try:
             client = Anthropic(api_key=api_key)
 
-            with client.messages.stream(
+            response = client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
                 temperature=temperature,
@@ -90,26 +73,23 @@ if prompt := st.chat_input("输入你的问题..."):
                     {"role": m["role"], "content": m["content"]}
                     for m in st.session_state.messages
                 ],
-            ) as stream:
-                for event in stream:
-                    if event.type == "content_block_delta":
-                        full_response += event.delta.text
-                        placeholder.markdown(full_response + "▌")
-                    elif event.type == "message_stop":
-                        placeholder.markdown(full_response)
+            )
+
+            full_response = response.content[0].text
+            placeholder.markdown(full_response)
 
         except AuthenticationError:
-            st.error("❌ API Key 无效，请检查 Key 是否正确，或是否已过期。")
-            placeholder.empty()
+            placeholder.error("❌ API Key 无效，请检查是否正确或已过期。")
+            full_response = ""
         except RateLimitError:
-            st.error("⏳ API 请求频率超限，请稍后重试。")
-            placeholder.empty()
+            placeholder.error("⏳ 请求太频繁，请稍后重试。")
+            full_response = ""
         except APIStatusError as e:
-            st.error(f"🚫 API 错误 [HTTP {e.status_code}]: {e.message}")
-            placeholder.empty()
+            placeholder.error(f"🚫 API 错误 [HTTP {e.status_code}]: {e.message}")
+            full_response = ""
         except Exception as e:
-            st.error(f"❌ 请求失败 [{type(e).__name__}]: {e}")
-            placeholder.empty()
+            placeholder.error(f"❌ 错误 [{type(e).__name__}]: {e}")
+            full_response = ""
 
         if full_response:
             st.session_state.messages.append(

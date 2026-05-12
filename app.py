@@ -1,6 +1,5 @@
 import streamlit as st
-from anthropic import Anthropic
-from anthropic.types import MessageStreamEvent
+from anthropic import Anthropic, AuthenticationError, RateLimitError, APIStatusError
 import os
 from dotenv import load_dotenv
 
@@ -99,9 +98,18 @@ if prompt := st.chat_input("输入你的问题..."):
                     elif event.type == "message_stop":
                         placeholder.markdown(full_response)
 
+        except AuthenticationError:
+            st.error("❌ API Key 无效，请检查 Key 是否正确，或是否已过期。")
+            placeholder.empty()
+        except RateLimitError:
+            st.error("⏳ API 请求频率超限，请稍后重试。")
+            placeholder.empty()
+        except APIStatusError as e:
+            st.error(f"🚫 API 错误 [HTTP {e.status_code}]: {e.message}")
+            placeholder.empty()
         except Exception as e:
-            placeholder.error(f"请求失败: {e}")
-            full_response = f"_[请求失败: {e}]_"
+            st.error(f"❌ 请求失败 [{type(e).__name__}]: {e}")
+            placeholder.empty()
 
         if full_response:
             st.session_state.messages.append(
